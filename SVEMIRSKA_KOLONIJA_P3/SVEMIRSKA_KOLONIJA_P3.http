@@ -1,0 +1,6 @@
+@SVEMIRSKA_KOLONIJA_P3_HostAddress = http://localhost:5246
+
+GET {{SVEMIRSKA_KOLONIJA_P3_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
