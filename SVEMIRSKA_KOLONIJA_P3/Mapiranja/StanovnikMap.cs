@@ -65,6 +65,7 @@ namespace SVEMIRSKA_KOLONIJA_P3.Mapiranja
                 .ParentKeyColumn("STANOVNIK_ID")
                 .ChildKeyColumn("SEKTOR_ID")
                 .Cascade.All();
+                
 
             HasManyToMany(x => x.UpravljaResursima)
                 .Table("UPRAVLJA_RESURSOM")

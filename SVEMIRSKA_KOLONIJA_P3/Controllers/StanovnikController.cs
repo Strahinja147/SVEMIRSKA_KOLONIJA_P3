@@ -135,7 +135,7 @@ namespace SVEMIRSKA_KOLONIJA_P3.Controllers
         /// </summary>
         /// <param name="posedujeId">ID veze 'Poseduje' koja se briše.</param>
         [HttpDelete]
-        [Route("poseduje-vezu/{posedujeId}")]
+        [Route("UkloniSpecijalizaciju/{posedujeId}")]
         public IActionResult ObrisiPosedujeVezu(int posedujeId)
         {
             try

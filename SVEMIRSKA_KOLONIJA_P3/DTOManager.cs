@@ -93,11 +93,15 @@ namespace SVEMIRSKA_KOLONIJA
                     Specijalizacije = st.Specijalizacije.Select(p => new PosedujePregled
                     {
                         Id = p.Id,
-                        NazivSpecijalizacije = p.Specijalizacija.Naziv,
+                        NazivSpecijalizacije = p.Specijalizacija?.Naziv,
                         NivoEkspertize = p.NivoEkspertize,
                         DatumSticanja = p.DatumSticanja,
                         Institucija = p.Institucija,
-                        Specijalizacija = new SpecijalizacijaPregled { Id = p.Specijalizacija.Id, Naziv = p.Specijalizacija.Naziv }
+                        Specijalizacija = p.Specijalizacija != null ? new SpecijalizacijaPregled
+                        {
+                            Id = p.Specijalizacija.Id,
+                            Naziv = p.Specijalizacija.Naziv
+                        } : null
                     }).ToList(),
                     SektoriKojeVodi = st.SektoriKojeVodi.Select(sek => new SektorPregled
                     {
@@ -350,13 +354,55 @@ namespace SVEMIRSKA_KOLONIJA
         /// <summary>
         /// Dodaje novi sektor u bazu unutar transakcije.
         /// </summary>
-        public static Sektor DodajSektor(SektorDetalji p)
+        //public static Sektor DodajSektor(SektorDetalji p)
+        //{
+        //    ISession? s = null;
+        //    ITransaction? t = null;
+        //    try
+        //    {
+        //        s = DataLayer.GetSession();
+        //        t = s.BeginTransaction();
+
+        //        var sektor = new Sektor
+        //        {
+        //            Naziv = p.Naziv,
+        //            TipSektora = p.TipSektora,
+        //            Kapacitet = p.Kapacitet,
+        //            Povrsina = p.Povrsina,
+        //        };
+
+        //        // Postavljanje reference na vođu sektora
+        //        if (p.VodjaSektora != null)
+        //        {
+        //            var vodja = s.Load<Stanovnik>(p.VodjaSektora.Id);
+        //            sektor.VodjaSektora = vodja;
+        //        }
+
+        //        s.Save(sektor);
+        //        t.Commit();
+        //        return sektor;
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        t?.Rollback();
+        //        Console.Error.WriteLine(ex.Message);
+        //        throw;
+        //    }
+        //    finally
+        //    {
+        //        s?.Close();
+        //    }
+        //}
+
+        public static SektorDetalji DodajSektor(SektorDetalji p)
         {
             ISession? s = null;
             ITransaction? t = null;
             try
             {
                 s = DataLayer.GetSession();
+                if (s == null) throw new InvalidOperationException("Sesija ka bazi nije uspostavljena.");
+
                 t = s.BeginTransaction();
 
                 var sektor = new Sektor
@@ -367,21 +413,64 @@ namespace SVEMIRSKA_KOLONIJA
                     Povrsina = p.Povrsina,
                 };
 
-                // Postavljanje reference na vođu sektora
                 if (p.VodjaSektora != null)
                 {
-                    var vodja = s.Load<Stanovnik>(p.VodjaSektora.Id);
+                    var vodja = s.Get<Stanovnik>(p.VodjaSektora.Id);
                     sektor.VodjaSektora = vodja;
                 }
 
                 s.Save(sektor);
+
+                // ===== KLJUČNA IZMENA OVDE =====
+                if (p.Radnici != null)
+                {
+                    foreach (var radnikDTO in p.Radnici)
+                    {
+                        var radnik = s.Get<Stanovnik>(radnikDTO.Id);
+                        if (radnik != null)
+                        {
+                            // Jednostavno dodamo učitanog radnika u kolekciju sektora.
+                            // NHibernate će sam kreirati red u prelaznoj tabeli 'RADI_U'.
+                            sektor.Radnici.Add(radnik);
+                        }
+                    }
+                }
+                // ===== KRAJ IZMENE =====
+
+                // Ne treba nam s.Update(sektor) jer NHibernate prati promene,
+                // ali commit će se pobrinuti za sve.
                 t.Commit();
-                return sektor;
+
+                // Pretvaramo sačuvani ENTITET nazad u DTO DOK JE SESIJA JOŠ OTVORENA
+                return new SektorDetalji
+                {
+                    Id = sektor.Id,
+                    Naziv = sektor.Naziv,
+                    TipSektora = sektor.TipSektora,
+                    Kapacitet = sektor.Kapacitet,
+                    Povrsina = sektor.Povrsina,
+                    VodjaSektora = sektor.VodjaSektora != null ? new StanovnikPregled
+                    {
+                        Id = sektor.VodjaSektora.Id,
+                        Ime = sektor.VodjaSektora.Ime,
+                        Prezime = sektor.VodjaSektora.Prezime,
+                        Zanimanje = sektor.VodjaSektora.Zanimanje
+                    } : null,
+                    Radnici = sektor.Radnici.Select(radnik => new StanovnikPregled
+                    {
+                        Id = radnik.Id,
+                        Ime = radnik.Ime,
+                        Prezime = radnik.Prezime,
+                        Zanimanje = radnik.Zanimanje
+                    }).ToList(),
+                    ResursiUSektoru = new List<ResursPregled>(),
+                    IstorijaOdrzavanja = new List<ZapisOdrzavanjaPregled>()
+                };
             }
             catch (Exception ex)
             {
                 t?.Rollback();
-                Console.Error.WriteLine(ex.Message);
+                Console.Error.WriteLine(ex.ToString());
                 throw;
             }
             finally
@@ -686,7 +775,7 @@ namespace SVEMIRSKA_KOLONIJA
                 detalji.Rezultat = zadatak.Rezultat;
                 detalji.BrojPotrebnihUcesnika = zadatak.BrojPotrebnihUcesnika;
 
-                detalji.Nadzadatak = (zadatak.Nadzadatak != null) ? KreirajZadatakPregled(zadatak.Nadzadatak) : null;
+                detalji.Podzadatak = (zadatak.Nadzadatak != null) ? KreirajZadatakPregled(zadatak.Nadzadatak) : null;
 
                 // 3. IZMENA: Dodat .Where() da se izbace potencijalni null rezultati
                 detalji.Podzadaci = zadatak.Podzadaci
@@ -794,31 +883,32 @@ namespace SVEMIRSKA_KOLONIJA
                 t = s.BeginTransaction();
 
                 // Učitavamo zadatak iz baze po ID-ju koji je stigao iz rute.
-                Zadatak zadatak = s.Load<Zadatak>(id);
+                Zadatak zadatak = s.Get<Zadatak>(id);
 
-                // ===== KLJUČNA PROVERA TIPA =====
-                // Proveravamo da li se stvarni tip zadatka iz baze poklapa sa tipom podataka koje smo poslali.
-                bool typeMismatch = false;
-
-                string expectedType = NHibernateProxyHelper.GetClassWithoutInitializingProxy(zadatak).Name;
-                string receivedType = p.GetType().Name;
-
-                switch (p)
+                if (zadatak == null)
                 {
-                    case EksperimentDetalji when zadatak is not Eksperiment: typeMismatch = true; break;
-                    case EvakuacijaDetalji when zadatak is not Evakuacija: typeMismatch = true; break;
-                    case MedicinskaIntervencijaDetalji when zadatak is not MedicinskaIntervencija: typeMismatch = true; break;
-                    case OdrzavanjeDetalji when zadatak is not Odrzavanje: typeMismatch = true; break;
-                    case IstrazivanjeDetalji when zadatak is not Istrazivanje: typeMismatch = true; break;
+                    throw new InvalidOperationException($"Zadatak sa ID-jem {id} ne postoji.");
                 }
 
-                if (typeMismatch)
+                string stvarniTipZadatka = zadatak.GetType().Name;
+
+                // Mapiranje DTO tipa u stvarni tip entiteta
+                string ocekivaniTipEntiteta = "";
+                switch (p)
                 {
-                    // Ako se tipovi ne poklapaju, bacamo grešku sa jasnom porukom.
+                    case EksperimentDetalji: ocekivaniTipEntiteta = "Eksperiment"; break;
+                    case EvakuacijaDetalji: ocekivaniTipEntiteta = "Evakuacija"; break;
+                    case MedicinskaIntervencijaDetalji: ocekivaniTipEntiteta = "MedicinskaIntervencija"; break;
+                    case OdrzavanjeDetalji: ocekivaniTipEntiteta = "Odrzavanje"; break;
+                    case IstrazivanjeDetalji: ocekivaniTipEntiteta = "Istrazivanje"; break;
+                }
+
+                if (stvarniTipZadatka != ocekivaniTipEntiteta)
+                {
+                    // Sada koristimo ToString() za lepšu poruku
                     throw new InvalidOperationException(
-                        $"Pokušavate da ažurirate zadatak sa ID-jem {id} koji je tipa '{expectedType}', " +
-                        $"a poslali ste podatke za ažuriranje tipa '{receivedType}'. Tipovi se moraju poklapati."
-                        );
+                        $"Pokušavate da izmenite zadatak tipa '{stvarniTipZadatka}' ali ste koristili metodu za '{p.ToString()}'."
+                    );
                 }
                 // ===== KRAJ PROVERE =====
 
@@ -903,11 +993,11 @@ namespace SVEMIRSKA_KOLONIJA
                 UcesnikZadatka? ucesnikZadatka = null;
                 if (tipUcesnika == "Stanovnik")
                 {
-                    ucesnikZadatka = s.Query<UcesnikZadatka>().FirstOrDefault(u => u.PripadaStanovniku.Id == ucesnikId);
+                    ucesnikZadatka = s.Query<UcesnikZadatka>().FirstOrDefault(u => u.PripadaStanovniku != null && u.PripadaStanovniku.Id == ucesnikId);
                 }
                 else if (tipUcesnika == "Robot")
                 {
-                    ucesnikZadatka = s.Query<UcesnikZadatka>().FirstOrDefault(u => u.PripadaRobotu.Id == ucesnikId);
+                    ucesnikZadatka = s.Query<UcesnikZadatka>().FirstOrDefault(u => u.PripadaRobotu != null && u.PripadaRobotu.Id == ucesnikId);
                 }
 
                 if (zadatak == null || ucesnikZadatka == null)
@@ -1056,15 +1146,27 @@ namespace SVEMIRSKA_KOLONIJA
             try
             {
                 s = DataLayer.GetSession();
+                if (s == null) throw new InvalidOperationException("Sesija ka bazi nije uspostavljena.");
+
                 t = s.BeginTransaction();
 
+                // 1. KREIRAMO NOVI 'UcesnikZadatka' OBJEKAT
+                // On je "prazan", služi samo kao veza
+                var noviUcesnik = new UcesnikZadatka();
+
+                // 2. KREIRAMO ROBOTA
                 var robot = new Robot
                 {
                     Sifra = p.Sifra,
                     Tip = p.Tip
-                    // UcesnikZadatka se namerno ostavlja kao null
+                    // 'UcesnikZadatka' svojstvo se ne postavlja direktno ovde
                 };
 
+                // 3. USPOSTAVLJAMO DVOSTRUKU VEZU
+                noviUcesnik.PripadaRobotu = robot; // Ucesnik pokazuje na Robota
+                robot.UcesnikZadatka = noviUcesnik;  // Robot pokazuje na Ucesnika
+
+                // Ostatak koda ostaje isti...
                 if (p.OdgovorniStanovnik != null)
                 {
                     var odgovorni = s.Load<Stanovnik>(p.OdgovorniStanovnik.Id);
@@ -1081,13 +1183,20 @@ namespace SVEMIRSKA_KOLONIJA
                     robot.Sektor = sektor;
                 }
 
+                // 4. ČUVAMO OBJEKAT ZA KOJI BAZA NEĆE GENERISATI ID
+                // NHibernate će sada znati da prvo mora da sačuva 'noviUcesnik'
+                // da bi dobio njegov ID, a zatim će taj ID upotrebiti pri čuvanju 'robota'.
+                // U zavisnosti od 'cascade' podešavanja, možda je dovoljno sačuvati samo 'robota'.
+                // Hajde da probamo sigurniju varijantu - čuvamo obe strane.
+                s.Save(noviUcesnik);
                 s.Save(robot);
+
                 t.Commit();
             }
             catch (Exception ex)
             {
                 t?.Rollback();
-                Console.Error.WriteLine(ex.Message);
+                Console.Error.WriteLine(ex.ToString()); // Koristite ToString() za više detalja
                 throw;
             }
             finally
@@ -1283,12 +1392,87 @@ namespace SVEMIRSKA_KOLONIJA
         /// <summary>
         /// Dodaje novi resurs u bazu unutar transakcije.
         /// </summary>
-        //MENJANO
-        public static Resurs DodajResurs(ResursDetalji p)
+
+        //public static ResursDetalji DodajResurs(ResursDetalji p)
+        //{
+        //    ISession? s = null;
+        //    ITransaction? t = null;
+        //    try
+        //    {
+        //        s = DataLayer.GetSession();
+        //        if (s == null) throw new InvalidOperationException("Sesija ka bazi nije uspostavljena.");
+
+        //        t = s.BeginTransaction();
+
+        //        // Kreiramo entitet 'Resurs'
+        //        var resurs = new Resurs
+        //        {
+        //            Naziv = p.Naziv,
+        //            TrenutnaKolicina = p.TrenutnaKolicina
+        //        };
+
+        //        if (p.Skladiste != null)
+        //        {
+        //            var skladiste = s.Get<Sektor>(p.Skladiste.Id);
+        //            resurs.Sektor = skladiste;
+        //        }
+
+        //        s.Save(resurs);
+
+        //        if (p.Upravitelji != null)
+        //        {
+        //            foreach (var upraviteljDTO in p.Upravitelji)
+        //            {
+        //                var stanovnik = s.Get<Stanovnik>(upraviteljDTO.Id);
+        //                if (stanovnik != null)
+        //                {
+        //                    var novaVeza = new UpravljaResursom
+        //                    {
+        //                        Resurs = resurs,
+        //                        Stanovnik = stanovnik
+        //                    };
+        //                    resurs.UpravljaVeze.Add(novaVeza);
+        //                    s.Save(novaVeza);
+        //                }
+        //            }
+        //        }
+
+        //        t.Commit();
+
+        //        // 2. KLJUČNA IZMENA: Pretvaramo sačuvani ENTITET nazad u DTO DOK JE SESIJA JOŠ OTVORENA
+        //        // Sada će NHibernate uspešno učitati sve potrebne podatke (imena stanovnika itd.)
+        //        return new ResursDetalji
+        //        {
+        //            Id = resurs.Id,
+        //            Naziv = resurs.Naziv,
+        //            TrenutnaKolicina = resurs.TrenutnaKolicina,
+        //            Skladiste = resurs.Sektor != null ? new SektorPregled { Id = resurs.Sektor.Id, Naziv = resurs.Sektor.Naziv, TipSektora = resurs.Sektor.TipSektora } : null,
+        //            Upravitelji = resurs.UpravljaVeze.Select(veza => new StanovnikPregled
+        //            {
+        //                Id = veza.Stanovnik.Id,
+        //                Ime = veza.Stanovnik.Ime,
+        //                Prezime = veza.Stanovnik.Prezime,
+        //                Zanimanje = veza.Stanovnik.Zanimanje
+        //            }).ToList(),
+        //            PotrosnjaPoSektorima = new List<TrosiPregled>() // Vraćamo praznu listu jer je nismo ni menjali
+        //        };
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        t?.Rollback();
+        //        Console.Error.WriteLine(ex.ToString());
+        //        throw;
+        //    }
+        //    finally
+        //    {
+        //        s?.Close();
+        //    }
+        //}
+
+        public static ResursDetalji DodajResurs(ResursDetalji p)
         {
             ISession? s = null;
             ITransaction? t = null;
-            // 2. IZMENA: Promenljiva 'validno' je obrisana kao nepotrebna.
             try
             {
                 s = DataLayer.GetSession();
@@ -1304,41 +1488,90 @@ namespace SVEMIRSKA_KOLONIJA
 
                 if (p.Skladiste != null)
                 {
-                    var skladiste = s.Load<Sektor>(p.Skladiste.Id);
+                    var skladiste = s.Get<Sektor>(p.Skladiste.Id);
                     resurs.Sektor = skladiste;
                 }
 
-                s.Save(resurs); // Čuvamo resurs da bi dobio ID
+                s.Save(resurs);
 
-                // Dodajemo veze za upravitelje
-                foreach (var upraviteljDTO in p.Upravitelji)
+                if (p.Upravitelji != null)
                 {
-                    var stanovnik = s.Load<Stanovnik>(upraviteljDTO.Id);
-                    var novaVeza = new UpravljaResursom
+                    foreach (var upraviteljDTO in p.Upravitelji)
                     {
-                        Resurs = resurs,
-                        Stanovnik = stanovnik
-                    };
-                    s.Save(novaVeza);
+                        var stanovnik = s.Get<Stanovnik>(upraviteljDTO.Id);
+                        if (stanovnik != null)
+                        {
+                            var novaVeza = new UpravljaResursom { Resurs = resurs, Stanovnik = stanovnik };
+                            resurs.UpravljaVeze.Add(novaVeza);
+                            s.Save(novaVeza);
+                        }
+                    }
                 }
+
+                // ===== NOVI BLOK KODA ZA OBRADU POTROŠNJE =====
+                if (p.PotrosnjaPoSektorima != null)
+                {
+                    foreach (var potrosnjaDTO in p.PotrosnjaPoSektorima)
+                    {
+                        // Učitavamo sektor za koji se vezuje potrošnja
+                        var sektorPotrosnje = s.Get<Sektor>(potrosnjaDTO.SektorId);
+                        if (sektorPotrosnje != null)
+                        {
+                            // Kreiramo novi 'Trosi' entitet
+                            var novaPotrosnja = new Trosi
+                            {
+                                Resurs = resurs,
+                                Sektor = sektorPotrosnje,
+                                DnevniProsek = potrosnjaDTO.DnevniProsek,
+                                KriticnaVrednost = potrosnjaDTO.KriticnaVrednost
+                            };
+                            // Dodajemo ga u memorijsku kolekciju resursa
+                            resurs.PotrosnjaPoSektorima.Add(novaPotrosnja);
+                            // Čuvamo ga u bazi
+                            s.Save(novaPotrosnja);
+                        }
+                    }
+                }
+                // ===== KRAJ NOVOG BLOKA =====
 
                 t.Commit();
 
-                // 3. IZMENA: Vraćamo ceo, sačuvani 'resurs' objekat.
-                return resurs;
+                // Sada kada kreiramo odgovor, PotrosnjaPoSektorima više neće biti prazna
+                return new ResursDetalji
+                {
+                    Id = resurs.Id,
+                    Naziv = resurs.Naziv,
+                    TrenutnaKolicina = resurs.TrenutnaKolicina,
+                    Skladiste = resurs.Sektor != null ? new SektorPregled { Id = resurs.Sektor.Id, Naziv = resurs.Sektor.Naziv, TipSektora = resurs.Sektor.TipSektora } : null,
+                    Upravitelji = resurs.UpravljaVeze.Select(veza => new StanovnikPregled
+                    {
+                        Id = veza.Stanovnik.Id,
+                        Ime = veza.Stanovnik.Ime,
+                        Prezime = veza.Stanovnik.Prezime,
+                        Zanimanje = veza.Stanovnik.Zanimanje
+                    }).ToList(),
+                    // ISPRAVLJENO: Sada mapiramo podatke iz sačuvanog entiteta
+                    PotrosnjaPoSektorima = resurs.PotrosnjaPoSektorima.Select(potrosnja => new TrosiPregled
+                    {
+                        Id = potrosnja.Id,
+                        SektorId = potrosnja.Sektor.Id,
+                        NazivSektora = potrosnja.Sektor.Naziv,
+                        NazivResursa = potrosnja.Resurs.Naziv,
+                        DnevniProsek = potrosnja.DnevniProsek,
+                        KriticnaVrednost = potrosnja.KriticnaVrednost
+                    }).ToList()
+                };
             }
             catch (Exception ex)
             {
-                // 4. IZMENA: Ispravljen catch blok.
                 t?.Rollback();
-                Console.Error.WriteLine(ex.Message);
-                throw; // Samo prosleđujemo grešku dalje. Nema 'return'.
+                Console.Error.WriteLine(ex.ToString());
+                throw;
             }
             finally
             {
                 s?.Close();
             }
-            // Nema 'return' na kraju, jer se metoda završava ili u 'try' (sa return resurs) ili u 'catch' (sa throw).
         }
 
         /// <summary>
@@ -1386,17 +1619,20 @@ namespace SVEMIRSKA_KOLONIJA
 
 
                 // 4. DODAJEMO PONOVO sve veze na osnovu liste koja je stigla sa forme
-                foreach (var upraviteljDTO in p.Upravitelji)
-                {
-                    var stanovnik = s.Load<Stanovnik>(upraviteljDTO.Id);
-
-                    var novaVeza = new UpravljaResursom
+                if (p.Upravitelji != null)
+                { 
+                    foreach (var upraviteljDTO in p.Upravitelji)
                     {
-                        Resurs = resurs,
-                        Stanovnik = stanovnik
-                    };
+                        var stanovnik = s.Load<Stanovnik>(upraviteljDTO.Id);
 
-                    s.Save(novaVeza);
+                        var novaVeza = new UpravljaResursom
+                        {
+                            Resurs = resurs,
+                            Stanovnik = stanovnik
+                        };
+
+                        s.Save(novaVeza);
+                    }
                 }
 
                 // Nije neophodno zvati s.Update(resurs) jer NHibernate prati promene

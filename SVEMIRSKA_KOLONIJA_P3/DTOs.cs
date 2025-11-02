@@ -51,9 +51,9 @@ namespace SVEMIRSKA_KOLONIJA_P3.DTOs
         public double? Povrsina { get; set; }
         public StanovnikPregled? VodjaSektora { get; set; }
 
-        public List<StanovnikPregled> Radnici { get; set; } = new List<StanovnikPregled>();
-        public List<ResursPregled> ResursiUSektoru { get; set; } = new List<ResursPregled>();
-        public List<ZapisOdrzavanjaPregled> IstorijaOdrzavanja { get; set; } = new List<ZapisOdrzavanjaPregled>();
+        public List<StanovnikPregled>? Radnici { get; set; } = new List<StanovnikPregled>();
+        public List<ResursPregled>? ResursiUSektoru { get; set; } = new List<ResursPregled>();
+        public List<ZapisOdrzavanjaPregled>? IstorijaOdrzavanja { get; set; } = new List<ZapisOdrzavanjaPregled>();
     }
 
     #endregion
@@ -107,16 +107,18 @@ namespace SVEMIRSKA_KOLONIJA_P3.DTOs
         public string? Rezultat { get; set; }
         public string? OpisCilja { get; set; }
         public string? Lokacija { get; set; }
-        public ZadatakPregled? Nadzadatak { get; set; }
+        public ZadatakPregled? Podzadatak { get; set; }
 
         public List<ZadatakPregled> Podzadaci { get; set; } = new List<ZadatakPregled>();
         public List<PotrebnaPregled> PotrebneSpecijalizacije { get; set; } = new List<PotrebnaPregled>();
         public List<AngazovaniUcesnikPregled> AngazovaniUcesnici { get; set; } = new List<AngazovaniUcesnikPregled>();
+
+        public override string ToString() => "Zadatak";
     }
 
     public class AngazovaniUcesnikPregled
     {
-        public string? Tip { get; set; } 
+        public string? Tip { get; set; }
         public string? Naziv { get; set; }
 
         public AngazovaniUcesnikPregled() { }
@@ -125,28 +127,38 @@ namespace SVEMIRSKA_KOLONIJA_P3.DTOs
     public class OdrzavanjeDetalji : ZadatakDetalji
     {
         public OdrzavanjeDetalji() : base() { }
+
+        public override string ToString() => "Odrzavanje";
     }
     public class IstrazivanjeDetalji : ZadatakDetalji
     {
         public IstrazivanjeDetalji() : base() { }
+
+        public override string ToString() => "Istrazivanje";
     }
     public class EvakuacijaDetalji : ZadatakDetalji
     {
         public string? OblastEvakuacije { get; set; }
         public int? BrojOsobaEvakuacije { get; set; }
         public EvakuacijaDetalji() : base() { }
+
+        public override string ToString() => "Evakuacija";
     }
 
     public class EksperimentDetalji : ZadatakDetalji
     {
         public string? NivoOpasnosti { get; set; }
         public EksperimentDetalji() : base() { }
+
+        public override string ToString() => "Eksperiment";
     }
 
     public class MedicinskaIntervencijaDetalji : ZadatakDetalji
     {
         public int? BrojPovredjenih { get; set; }
         public int? StepenKriticnosti { get; set; }
+
+        public override string ToString() => "MedicinskaIntervencija";
     }
 
     #endregion
@@ -251,6 +263,7 @@ namespace SVEMIRSKA_KOLONIJA_P3.DTOs
     public class TrosiPregled
     {
         public int Id { get; set; }
+        public int SektorId { get; set; }
         public string? NazivSektora { get; set; }
         public string? NazivResursa { get; set; }
         public double? DnevniProsek { get; set; }
